@@ -69,13 +69,27 @@ func (s *CpuGroup) Set(path string, cgroup *configs.Cgroup) error {
 			return err
 		}
 	}
+	// The order of setting cfs_quota_us and cfs_period_us is significant, since cgroup child node
+	// should not have a higher quota/period ratio than its parent.
+	// Use period->quota-->period sequence to make sure no matter parent or child node is changed,
+	// as long as the vlaue is valid, it would be written into cgroup successfully
+	// Note: if there are three or more node in cgroup tree, sometimes changing node in the middle
+	// would not be possbile.
+	// i.e. 1000/1000 -> 1000/1000 -> 1000/1000, chaning the middle node to 10000/10000 would always fail
+	// unless there is some automic way to make cgroup changes.
+	reorder := false
 	if cgroup.Resources.CpuPeriod != 0 {
 		if err := writeFile(path, "cpu.cfs_period_us", strconv.FormatUint(cgroup.Resources.CpuPeriod, 10)); err != nil {
-			return err
+			reorder = true
 		}
 	}
 	if cgroup.Resources.CpuQuota != 0 {
 		if err := writeFile(path, "cpu.cfs_quota_us", strconv.FormatInt(cgroup.Resources.CpuQuota, 10)); err != nil {
+			return err
+		}
+	}
+	if reorder {
+		if err := writeFile(path, "cpu.cfs_period_us", strconv.FormatUint(cgroup.Resources.CpuPeriod, 10)); err != nil {
 			return err
 		}
 	}
